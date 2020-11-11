@@ -1,3 +1,6 @@
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use std::collections::HashMap;
 use std::ops::{BitAnd, BitOr};
 
@@ -61,10 +64,9 @@ pub enum Rule {
         n: usize,
         rules: Vec<Rule>,
     },
-    // Rule(Description, Field, Constraint)
     Rule {
-        desc: String,
         field: String,
+        #[cfg_attr(feature = "serde", serde(flatten))]
         constraint: Constraint,
     },
 }
@@ -131,7 +133,6 @@ impl Rule {
                 }
             }
             Rule::Rule {
-                desc: ref name,
                 ref field,
                 ref constraint,
             } => {
@@ -141,7 +142,7 @@ impl Rule {
                     Status::Unknown
                 };
                 RuleResult {
-                    name: name.to_owned(),
+                    name: field.to_owned(),
                     status,
                     children: Vec::new(),
                 }
@@ -155,11 +156,13 @@ impl Rule {
 // **********************************************************************
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all(serialize = "snake_case")))]
+#[cfg_attr(feature = "serde", serde(tag = "operator", content = "value"))]
 pub enum Constraint {
     StringEquals(String),
     IntEquals(i32),
     IntRange(i32, i32),
-    Boolean(bool),
+    BoolEquals(bool),
 }
 
 impl Constraint {
@@ -196,7 +199,7 @@ impl Constraint {
                     Status::NotMet
                 }
             }
-            Constraint::Boolean(b) => {
+            Constraint::BoolEquals(b) => {
                 let bool_val = &val.to_lowercase() == "true";
                 if bool_val == b {
                     Status::Met

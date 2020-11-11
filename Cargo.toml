@@ -1,11 +1,12 @@
 [package]
 authors = ["Benn Sundsrud <benn.sundsrud@gmail.com>"]
+edition = "2018"
 license = "MIT/Apache-2.0"
 name    = "ruuls"
 version = "0.1.0"
 
 [features]
-default = []
+default = ["serde"]
 
 [dependencies]
 serde = { version = "1.0.117", features = ["derive"], optional = true }
