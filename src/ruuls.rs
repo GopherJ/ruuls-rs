@@ -75,7 +75,7 @@ pub enum Rule {
     Or {
         or: Vec<Rule>,
     },
-    NumberOf {
+    AtLeast {
         n: usize,
         rules: Vec<Rule>,
     },
@@ -117,29 +117,24 @@ impl Rule {
                     children,
                 }
             }
-            Rule::NumberOf {
+            Rule::AtLeast {
                 n: count,
                 ref rules,
             } => {
                 let mut met_count = 0;
-                let mut failed_count = 0;
                 let children = rules
                     .iter()
                     .map(|c| c.check_map(info))
                     .inspect(|r| {
                         if r.status == Status::Met {
                             met_count += 1;
-                        } else if r.status == Status::NotMet {
-                            failed_count += 1;
                         }
                     })
                     .collect::<Vec<_>>();
                 let status = if met_count >= count {
                     Status::Met
-                } else if failed_count >= children.len() - count + 1 {
-                    Status::NotMet
                 } else {
-                    Status::Unknown
+                    Status::NotMet
                 };
                 RuleResult {
                     name: format!("At least {} of", count),

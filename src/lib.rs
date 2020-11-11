@@ -80,11 +80,9 @@ pub fn or(or: Vec<Rule>) -> Rule {
 
 /// Creates a `Rule` where `n` child `Rule`s must be `Met`
 ///
-/// * If `>= n` are `Met`, the result will be `Met`
-/// * If `>= children.len() - n + 1` are `NotMet`, the result will be `NotMet` (No combination of `Met` + `Unknown` can be >= `n`)
-/// * If neither of the above are met, the result is `Unknown`
-pub fn n_of(n: usize, rules: Vec<Rule>) -> Rule {
-    Rule::NumberOf { n, rules }
+/// * If `>= n` are `Met`, the result will be `Met`, otherwise it'll be `NotMet`
+pub fn at_least(n: usize, rules: Vec<Rule>) -> Rule {
+    Rule::AtLeast { n, rules }
 }
 
 /// Creates a rule for string comparison
@@ -127,7 +125,7 @@ pub fn bool_equals(field: &str, val: bool) -> Rule {
 
 #[cfg(test)]
 mod tests {
-    use super::{and, bool_equals, int_equals, int_in_range, n_of, or, string_equals, Status};
+    use super::{and, at_least, bool_equals, int_equals, int_in_range, or, string_equals, Status};
     use std::collections::HashMap;
 
     fn get_test_data() -> HashMap<String, String> {
@@ -210,7 +208,7 @@ mod tests {
     fn n_of_rules() {
         let map = get_test_data();
         // 2 Met, 1 NotMet == Met
-        let mut root = n_of(
+        let mut root = at_least(
             2,
             vec![
                 int_equals("foo", 1),
@@ -222,8 +220,8 @@ mod tests {
 
         assert!(res.status == Status::Met);
 
-        // 1 Met, 1 NotMet, 1 Unknown == Unknown
-        root = n_of(
+        // 1 Met, 1 NotMet, 1 Unknown == NotMet
+        root = at_least(
             2,
             vec![
                 int_equals("foo", 1),
@@ -233,14 +231,14 @@ mod tests {
         );
         res = root.check_map(&map);
 
-        assert!(res.status == Status::Unknown);
+        assert!(res.status == Status::NotMet);
 
-        // 2 NotMet, _ == NotMet
-        root = n_of(
+        // 2 NotMet, 1 Unknown == Unknown
+        root = at_least(
             2,
             vec![
-                int_equals("quux", 2),
-                string_equals("bar", "baz"),
+                int_equals("foo", 2),
+                string_equals("quux", "baz"),
                 bool_equals("baz", false),
             ],
         );
