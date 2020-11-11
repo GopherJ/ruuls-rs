@@ -183,6 +183,10 @@ pub enum Constraint {
     IntNotIn(Vec<i32>),
     IntInRange(i32, i32),
     IntNotInRange(i32, i32),
+    LessThan(i32),
+    LessThanInclusive(i32),
+    GreaterThan(i32),
+    GreaterThanInclusive(i32),
     BoolEquals(bool),
 }
 
@@ -284,6 +288,54 @@ impl Constraint {
                         Status::NotMet
                     } else {
                         Status::Met
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::LessThan(num) => {
+                let parse_res = val.parse::<i32>();
+                if let Ok(val) = parse_res {
+                    if val < num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::LessThanInclusive(num) => {
+                let parse_res = val.parse::<i32>();
+                if let Ok(val) = parse_res {
+                    if val <= num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::GreaterThan(num) => {
+                let parse_res = val.parse::<i32>();
+                if let Ok(val) = parse_res {
+                    if val > num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::GreaterThanInclusive(num) => {
+                let parse_res = val.parse::<i32>();
+                if let Ok(val) = parse_res {
+                    if val >= num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
                     }
                 } else {
                     Status::NotMet
