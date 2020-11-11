@@ -88,13 +88,13 @@ pub enum Rule {
 impl Rule {
     /// Starting at this node, recursively check (depth-first) any child nodes and
     /// aggregate the results
-    pub fn check(&self, info: &HashMap<String, String>) -> RuleResult {
+    pub fn check_map(&self, info: &HashMap<String, String>) -> RuleResult {
         match *self {
             Rule::And { ref rules } => {
                 let mut status = Status::Met;
                 let children = rules
                     .iter()
-                    .map(|c| c.check(info))
+                    .map(|c| c.check_map(info))
                     .inspect(|r| status = status & r.status)
                     .collect::<Vec<_>>();
                 RuleResult {
@@ -107,7 +107,7 @@ impl Rule {
                 let mut status = Status::NotMet;
                 let children = rules
                     .iter()
-                    .map(|c| c.check(info))
+                    .map(|c| c.check_map(info))
                     .inspect(|r| status = status | r.status)
                     .collect::<Vec<_>>();
                 RuleResult {
@@ -124,7 +124,7 @@ impl Rule {
                 let mut failed_count = 0;
                 let children = rules
                     .iter()
-                    .map(|c| c.check(info))
+                    .map(|c| c.check_map(info))
                     .inspect(|r| {
                         if r.status == Status::Met {
                             met_count += 1;
@@ -170,7 +170,7 @@ impl Rule {
 // **********************************************************************
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(rename_all(serialize = "snake_case")))]
+#[cfg_attr(feature = "serde", serde(rename_all(serialize = "camelCase")))]
 #[cfg_attr(feature = "serde", serde(tag = "operator", content = "value"))]
 pub enum Constraint {
     StringEquals(String),

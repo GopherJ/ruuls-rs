@@ -17,13 +17,13 @@
 //!     ruuls::string_equals("name", "John Doe"),
 //!     ruuls::or(vec![
 //!         ruuls::int_equals("fav_number", 5),
-//!         ruuls::int_range("thinking_of", 5, 10)
+//!         ruuls::int_in_range("thinking_of", 5, 10)
 //!     ])
 //! ]);
 //! let mut facts = HashMap::new();
 //! facts.insert("name".into(), "John Doe".into());
 //! facts.insert("fav_number".into(), "5".into());
-//! let result = tree.check(&facts);
+//! let result = tree.check_map(&facts);
 //! println!("{:?}", result);
 //! assert!(result.status == ruuls::Status::Met);
 //! // result = RuleResult { name: "And", status: Met, children: [RuleResult { name: "Name is John Doe", status: Met, children: [] }, RuleResult { name: "Or", status: Met, children: [RuleResult { name: "Favorite number is 5", status: Met, children: [] }, RuleResult { name: "Thinking of a number between 5 and 10", status: Unknown, children: [] }] }] }
@@ -108,7 +108,7 @@ pub fn int_equals(field: &str, val: i32) -> Rule {
 /// Creates a rule for int range comparison with the interval `[start, end]`.
 ///
 /// If the checked value is not convertible to an integer, the result is `NotMet`
-pub fn int_range(field: &str, start: i32, end: i32) -> Rule {
+pub fn int_in_range(field: &str, start: i32, end: i32) -> Rule {
     Rule::Rule {
         field: field.into(),
         constraint: Constraint::IntInRange(start, end),
@@ -127,7 +127,7 @@ pub fn bool_equals(field: &str, val: bool) -> Rule {
 
 #[cfg(test)]
 mod tests {
-    use super::{and, bool_equals, int_equals, int_range, n_of, or, string_equals, Status};
+    use super::{and, bool_equals, int_equals, int_in_range, n_of, or, string_equals, Status};
     use std::collections::HashMap;
 
     fn get_test_data() -> HashMap<String, String> {
@@ -143,31 +143,31 @@ mod tests {
         let map = get_test_data();
         // Met & Met == Met
         let mut root = and(vec![int_equals("foo", 1), string_equals("bar", "bar")]);
-        let mut res = root.check(&map);
+        let mut res = root.check_map(&map);
 
         assert!(res.status == Status::Met);
 
         // Met & NotMet == NotMet
         root = and(vec![int_equals("foo", 2), string_equals("bar", "bar")]);
-        res = root.check(&map);
+        res = root.check_map(&map);
 
         assert!(res.status == Status::NotMet);
 
         // Met & Unknown == Unknown
         root = and(vec![int_equals("quux", 2), string_equals("bar", "bar")]);
-        res = root.check(&map);
+        res = root.check_map(&map);
 
         assert!(res.status == Status::Unknown);
 
         // NotMet & Unknown == NotMet
         root = and(vec![int_equals("quux", 2), string_equals("bar", "baz")]);
-        res = root.check(&map);
+        res = root.check_map(&map);
 
         assert!(res.status == Status::NotMet);
 
         // Unknown & Unknown == Unknown
         root = and(vec![int_equals("quux", 2), string_equals("fizz", "bar")]);
-        res = root.check(&map);
+        res = root.check_map(&map);
 
         assert!(res.status == Status::Unknown);
     }
@@ -177,31 +177,31 @@ mod tests {
         let map = get_test_data();
         // Met | Met == Met
         let mut root = or(vec![int_equals("foo", 1), string_equals("bar", "bar")]);
-        let mut res = root.check(&map);
+        let mut res = root.check_map(&map);
 
         assert!(res.status == Status::Met);
 
         // Met | NotMet == Met
         root = or(vec![int_equals("foo", 2), string_equals("bar", "bar")]);
-        res = root.check(&map);
+        res = root.check_map(&map);
 
         assert!(res.status == Status::Met);
 
         // Met | Unknown == Met
         root = or(vec![int_equals("quux", 2), string_equals("bar", "bar")]);
-        res = root.check(&map);
+        res = root.check_map(&map);
 
         assert!(res.status == Status::Met);
 
         // NotMet | Unknown == Unknown
         root = or(vec![int_equals("quux", 2), string_equals("bar", "baz")]);
-        res = root.check(&map);
+        res = root.check_map(&map);
 
         assert!(res.status == Status::Unknown);
 
         // Unknown | Unknown == Unknown
         root = or(vec![int_equals("quux", 2), string_equals("fizz", "bar")]);
-        res = root.check(&map);
+        res = root.check_map(&map);
 
         assert!(res.status == Status::Unknown);
     }
@@ -218,7 +218,7 @@ mod tests {
                 bool_equals("baz", false),
             ],
         );
-        let mut res = root.check(&map);
+        let mut res = root.check_map(&map);
 
         assert!(res.status == Status::Met);
 
@@ -231,7 +231,7 @@ mod tests {
                 bool_equals("baz", false),
             ],
         );
-        res = root.check(&map);
+        res = root.check_map(&map);
 
         assert!(res.status == Status::Unknown);
 
@@ -244,7 +244,7 @@ mod tests {
                 bool_equals("baz", false),
             ],
         );
-        res = root.check(&map);
+        res = root.check_map(&map);
 
         assert!(res.status == Status::NotMet);
     }
@@ -253,11 +253,11 @@ mod tests {
     fn string_equals_rule() {
         let map = get_test_data();
         let mut rule = string_equals("bar", "bar");
-        let mut res = rule.check(&map);
+        let mut res = rule.check_map(&map);
         assert!(res.status == Status::Met);
 
         rule = string_equals("bar", "baz");
-        res = rule.check(&map);
+        res = rule.check_map(&map);
         assert!(res.status == Status::NotMet);
     }
 
@@ -265,33 +265,33 @@ mod tests {
     fn int_equals_rule() {
         let map = get_test_data();
         let mut rule = int_equals("foo", 1);
-        let mut res = rule.check(&map);
+        let mut res = rule.check_map(&map);
         assert!(res.status == Status::Met);
 
         rule = int_equals("foo", 2);
-        res = rule.check(&map);
+        res = rule.check_map(&map);
         assert!(res.status == Status::NotMet);
 
         // Values not convertible to int should be NotMet
         rule = int_equals("bar", 2);
-        res = rule.check(&map);
+        res = rule.check_map(&map);
         assert!(res.status == Status::NotMet);
     }
 
     #[test]
     fn int_range_rule() {
         let map = get_test_data();
-        let mut rule = int_range("foo", 1, 3);
-        let mut res = rule.check(&map);
+        let mut rule = int_in_range("foo", 1, 3);
+        let mut res = rule.check_map(&map);
         assert!(res.status == Status::Met);
 
-        rule = int_range("foo", 2, 3);
-        res = rule.check(&map);
+        rule = int_in_range("foo", 2, 3);
+        res = rule.check_map(&map);
         assert!(res.status == Status::NotMet);
 
         // Values not convertible to int should be NotMet
-        rule = int_range("bar", 1, 3);
-        res = rule.check(&map);
+        rule = int_in_range("bar", 1, 3);
+        res = rule.check_map(&map);
         assert!(res.status == Status::NotMet);
     }
 
@@ -299,24 +299,24 @@ mod tests {
     fn boolean_rule() {
         let mut map = get_test_data();
         let mut rule = bool_equals("baz", true);
-        let mut res = rule.check(&map);
+        let mut res = rule.check_map(&map);
         assert!(res.status == Status::Met);
 
         rule = bool_equals("baz", false);
-        res = rule.check(&map);
+        res = rule.check_map(&map);
         assert!(res.status == Status::NotMet);
 
         rule = bool_equals("bar", true);
-        res = rule.check(&map);
+        res = rule.check_map(&map);
         assert!(res.status == Status::NotMet);
 
         rule = bool_equals("bar", false);
-        res = rule.check(&map);
+        res = rule.check_map(&map);
         assert!(res.status == Status::Met);
 
         map.insert("quux".into(), "tRuE".into());
         rule = bool_equals("quux", true);
-        res = rule.check(&map);
+        res = rule.check_map(&map);
         assert!(res.status == Status::Met);
     }
 }
