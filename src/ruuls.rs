@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::ops::{BitOr, BitAnd};
+use std::ops::{BitAnd, BitOr};
 
 // ***********************************************************************
 // STATUS
@@ -21,8 +21,7 @@ impl BitAnd for Status {
     fn bitand(self, rhs: Status) -> Status {
         match (self, rhs) {
             (Status::Met, Status::Met) => Status::Met,
-            (Status::NotMet, _) |
-            (_, Status::NotMet) => Status::NotMet,
+            (Status::NotMet, _) | (_, Status::NotMet) => Status::NotMet,
             (_, _) => Status::Unknown,
         }
     }
@@ -45,62 +44,79 @@ impl BitOr for Status {
 
 /// Representation of a node in the rules tree
 ///
-/// It is unnecessary to interact with this type outside of calling `Rule::check()`, 
+/// It is unnecessary to interact with this type outside of calling `Rule::check()`,
 /// to construct the rules tree use the [convenience functions][1] in the module root.
 ///
 /// [1]: index.html#functions
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Rule {
-    And { rules: Vec<Rule> },
-    Or { rules: Vec<Rule> },
-    NumberOf { n: usize, rules: Vec<Rule> },
+    And {
+        rules: Vec<Rule>,
+    },
+    Or {
+        rules: Vec<Rule>,
+    },
+    NumberOf {
+        n: usize,
+        rules: Vec<Rule>,
+    },
     // Rule(Description, Field, Constraint)
-    Rule { desc: String, field: String, constraint: Constraint },
+    Rule {
+        desc: String,
+        field: String,
+        constraint: Constraint,
+    },
 }
 
 impl Rule {
-    /// Starting at this node, recursively check (depth-first) any child nodes and 
+    /// Starting at this node, recursively check (depth-first) any child nodes and
     /// aggregate the results
     pub fn check(&self, info: &HashMap<String, String>) -> RuleResult {
         match *self {
             Rule::And { ref rules } => {
                 let mut status = Status::Met;
-                let children = rules.iter()
-                                    .map(|c| c.check(info))
-                                    .inspect(|r| status = status & r.status)
-                                    .collect::<Vec<_>>();
+                let children = rules
+                    .iter()
+                    .map(|c| c.check(info))
+                    .inspect(|r| status = status & r.status)
+                    .collect::<Vec<_>>();
                 RuleResult {
                     name: "And".into(),
-                    status: status,
-                    children: children,
+                    status,
+                    children,
                 }
             }
-            Rule::Or{ ref rules } => {
+            Rule::Or { ref rules } => {
                 let mut status = Status::NotMet;
-                let children = rules.iter()
-                                    .map(|c| c.check(info))
-                                    .inspect(|r| status = status | r.status)
-                                    .collect::<Vec<_>>();
+                let children = rules
+                    .iter()
+                    .map(|c| c.check(info))
+                    .inspect(|r| status = status | r.status)
+                    .collect::<Vec<_>>();
                 RuleResult {
                     name: "Or".into(),
-                    status: status,
-                    children: children,
+                    status,
+                    children,
                 }
             }
-            Rule::NumberOf { n: count, ref rules } => {
+            Rule::NumberOf {
+                n: count,
+                ref rules,
+            } => {
                 let mut met_count = 0;
                 let mut failed_count = 0;
-                let children = rules.iter()
-                                    .map(|c| c.check(info))
-                                    .inspect(|r| {
-                                        if r.status == Status::Met {
-                                            met_count += 1;
-                                        } else if r.status == Status::NotMet {
-                                            failed_count += 1;
-                                        }
-                                    })
-                                    .collect::<Vec<_>>();
+                let children = rules
+                    .iter()
+                    .map(|c| c.check(info))
+                    .inspect(|r| {
+                        if r.status == Status::Met {
+                            met_count += 1;
+                        } else if r.status == Status::NotMet {
+                            failed_count += 1;
+                        }
+                    })
+                    .collect::<Vec<_>>();
                 let status = if met_count >= count {
                     Status::Met
                 } else if failed_count >= children.len() - count + 1 {
@@ -110,13 +126,15 @@ impl Rule {
                 };
                 RuleResult {
                     name: format!("At least {} of", count),
-                    status: status,
-                    children: children,
+                    status,
+                    children,
                 }
-
-
             }
-            Rule::Rule { desc: ref name, ref field, ref constraint } => {
+            Rule::Rule {
+                desc: ref name,
+                ref field,
+                ref constraint,
+            } => {
                 let status = if let Some(s) = info.get(field) {
                     constraint.check(s)
                 } else {
@@ -124,7 +142,7 @@ impl Rule {
                 };
                 RuleResult {
                     name: name.to_owned(),
-                    status: status,
+                    status,
                     children: Vec::new(),
                 }
             }
@@ -193,7 +211,7 @@ impl Constraint {
 // ***********************************************************************
 // Rule RESULT
 // **********************************************************************
-/// Result of checking a rules tree.  
+/// Result of checking a rules tree.
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RuleResult {
