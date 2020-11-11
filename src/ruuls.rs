@@ -67,12 +67,13 @@ impl Not for Status {
 /// [1]: index.html#functions
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(untagged))]
 pub enum Rule {
     And {
-        rules: Vec<Rule>,
+        and: Vec<Rule>,
     },
     Or {
-        rules: Vec<Rule>,
+        or: Vec<Rule>,
     },
     NumberOf {
         n: usize,
@@ -90,9 +91,9 @@ impl Rule {
     /// aggregate the results
     pub fn check_map(&self, info: &HashMap<String, String>) -> RuleResult {
         match *self {
-            Rule::And { ref rules } => {
+            Rule::And { ref and } => {
                 let mut status = Status::Met;
-                let children = rules
+                let children = and
                     .iter()
                     .map(|c| c.check_map(info))
                     .inspect(|r| status = status & r.status)
@@ -103,9 +104,9 @@ impl Rule {
                     children,
                 }
             }
-            Rule::Or { ref rules } => {
+            Rule::Or { ref or } => {
                 let mut status = Status::NotMet;
-                let children = rules
+                let children = or
                     .iter()
                     .map(|c| c.check_map(info))
                     .inspect(|r| status = status | r.status)

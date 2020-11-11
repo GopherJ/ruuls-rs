@@ -65,8 +65,8 @@ pub use crate::ruuls::{Constraint, Rule, RuleResult, Status};
 /// * If any are `NotMet`, the result will be `NotMet`
 /// * If the results contain only `Met` and `Unknown`, the result will be `Unknown`
 /// * Only results in `Met` if all children are `Met`
-pub fn and(rules: Vec<Rule>) -> Rule {
-    Rule::And { rules }
+pub fn and(and: Vec<Rule>) -> Rule {
+    Rule::And { and }
 }
 
 /// Creates a `Rule` where any child `Rule` must be `Met`
@@ -74,8 +74,8 @@ pub fn and(rules: Vec<Rule>) -> Rule {
 /// * If any are `Met`, the result will be `Met`
 /// * If the results contain only `NotMet` and `Unknown`, the result will be `Unknown`
 /// * Only results in `NotMet` if all children are `NotMet`
-pub fn or(rules: Vec<Rule>) -> Rule {
-    Rule::Or { rules }
+pub fn or(or: Vec<Rule>) -> Rule {
+    Rule::Or { or }
 }
 
 /// Creates a `Rule` where `n` child `Rule`s must be `Met`
