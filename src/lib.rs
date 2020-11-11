@@ -96,7 +96,7 @@ pub fn string_equals(field: &str, val: &str) -> Rule {
 /// Creates a rule for int comparison.
 ///
 ///If the checked value is not convertible to an integer, the result is `NotMet`
-pub fn int_equals(field: &str, val: i32) -> Rule {
+pub fn int_equals(field: &str, val: i64) -> Rule {
     Rule::Rule {
         field: field.into(),
         constraint: Constraint::IntEquals(val),
@@ -106,7 +106,7 @@ pub fn int_equals(field: &str, val: i32) -> Rule {
 /// Creates a rule for int range comparison with the interval `[start, end]`.
 ///
 /// If the checked value is not convertible to an integer, the result is `NotMet`
-pub fn int_in_range(field: &str, start: i32, end: i32) -> Rule {
+pub fn int_in_range(field: &str, start: i64, end: i64) -> Rule {
     Rule::Rule {
         field: field.into(),
         constraint: Constraint::IntInRange(start, end),
