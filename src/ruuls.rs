@@ -1,8 +1,10 @@
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use std::collections::HashMap;
-use std::ops::{BitAnd, BitOr};
+use std::{
+    collections::HashMap,
+    ops::{BitAnd, BitOr, Not},
+};
 
 // ***********************************************************************
 // STATUS
@@ -37,6 +39,18 @@ impl BitOr for Status {
             (Status::NotMet, Status::NotMet) => Status::NotMet,
             (Status::Met, _) | (_, Status::Met) => Status::Met,
             (_, _) => Status::Unknown,
+        }
+    }
+}
+
+impl Not for Status {
+    type Output = Status;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Status::Met => Status::NotMet,
+            Status::NotMet => Status::Met,
+            Status::Unknown => Status::Unknown,
         }
     }
 }
@@ -160,8 +174,15 @@ impl Rule {
 #[cfg_attr(feature = "serde", serde(tag = "operator", content = "value"))]
 pub enum Constraint {
     StringEquals(String),
+    StringNotEquals(String),
+    StringIn(Vec<String>),
+    StringNotIn(Vec<String>),
     IntEquals(i32),
-    IntRange(i32, i32),
+    IntNotEquals(i32),
+    IntIn(Vec<i32>),
+    IntNotIn(Vec<i32>),
+    IntInRange(i32, i32),
+    IntNotInRange(i32, i32),
     BoolEquals(bool),
 }
 
@@ -175,10 +196,31 @@ impl Constraint {
                     Status::NotMet
                 }
             }
-            Constraint::IntEquals(i) => {
+            Constraint::StringNotEquals(ref s) => {
+                if val != s {
+                    Status::Met
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::StringIn(ref ss) => {
+                if ss.iter().any(|s| s == val) {
+                    Status::Met
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::StringNotIn(ref ss) => {
+                if ss.iter().all(|s| s != val) {
+                    Status::Met
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::IntEquals(num) => {
                 let parse_res = val.parse::<i32>();
                 if let Ok(val) = parse_res {
-                    if val == i {
+                    if val == num {
                         Status::Met
                     } else {
                         Status::NotMet
@@ -187,13 +229,61 @@ impl Constraint {
                     Status::NotMet
                 }
             }
-            Constraint::IntRange(start, end) => {
+            Constraint::IntIn(ref nums) => {
+                let parse_res = val.parse::<i32>();
+                if let Ok(val) = parse_res {
+                    if nums.iter().any(|&num| num == val) {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::IntNotIn(ref nums) => {
+                let parse_res = val.parse::<i32>();
+                if let Ok(val) = parse_res {
+                    if nums.iter().all(|&num| num != val) {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::IntNotEquals(num) => {
+                let parse_res = val.parse::<i32>();
+                if let Ok(val) = parse_res {
+                    if val != num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::IntInRange(start, end) => {
                 let parse_res = val.parse::<i32>();
                 if let Ok(val) = parse_res {
                     if start <= val && val <= end {
                         Status::Met
                     } else {
                         Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::IntNotInRange(start, end) => {
+                let parse_res = val.parse::<i32>();
+                if let Ok(val) = parse_res {
+                    if start <= val && val <= end {
+                        Status::NotMet
+                    } else {
+                        Status::Met
                     }
                 } else {
                     Status::NotMet

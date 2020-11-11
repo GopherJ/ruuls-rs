@@ -111,7 +111,7 @@ pub fn int_equals(field: &str, val: i32) -> Rule {
 pub fn int_range(field: &str, start: i32, end: i32) -> Rule {
     Rule::Rule {
         field: field.into(),
-        constraint: Constraint::IntRange(start, end),
+        constraint: Constraint::IntInRange(start, end),
     }
 }
 
