@@ -187,38 +187,38 @@ pub enum Constraint {
 }
 
 impl Constraint {
-    pub fn check(&self, val: &str) -> Status {
+    pub fn check(&self, v: &str) -> Status {
         match *self {
             Constraint::StringEquals(ref s) => {
-                if val == s {
+                if v == s {
                     Status::Met
                 } else {
                     Status::NotMet
                 }
             }
             Constraint::StringNotEquals(ref s) => {
-                if val != s {
+                if v != s {
                     Status::Met
                 } else {
                     Status::NotMet
                 }
             }
             Constraint::StringIn(ref ss) => {
-                if ss.iter().any(|s| s == val) {
+                if ss.iter().any(|s| s == v) {
                     Status::Met
                 } else {
                     Status::NotMet
                 }
             }
             Constraint::StringNotIn(ref ss) => {
-                if ss.iter().all(|s| s != val) {
+                if ss.iter().all(|s| s != v) {
                     Status::Met
                 } else {
                     Status::NotMet
                 }
             }
             Constraint::IntEquals(num) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i32>();
                 if let Ok(val) = parse_res {
                     if val == num {
                         Status::Met
@@ -230,7 +230,7 @@ impl Constraint {
                 }
             }
             Constraint::IntIn(ref nums) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i32>();
                 if let Ok(val) = parse_res {
                     if nums.iter().any(|&num| num == val) {
                         Status::Met
@@ -242,7 +242,7 @@ impl Constraint {
                 }
             }
             Constraint::IntNotIn(ref nums) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i32>();
                 if let Ok(val) = parse_res {
                     if nums.iter().all(|&num| num != val) {
                         Status::Met
@@ -254,7 +254,7 @@ impl Constraint {
                 }
             }
             Constraint::IntNotEquals(num) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i32>();
                 if let Ok(val) = parse_res {
                     if val != num {
                         Status::Met
@@ -266,7 +266,7 @@ impl Constraint {
                 }
             }
             Constraint::IntInRange(start, end) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i32>();
                 if let Ok(val) = parse_res {
                     if start <= val && val <= end {
                         Status::Met
@@ -278,7 +278,7 @@ impl Constraint {
                 }
             }
             Constraint::IntNotInRange(start, end) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i32>();
                 if let Ok(val) = parse_res {
                     if start <= val && val <= end {
                         Status::NotMet
@@ -290,7 +290,7 @@ impl Constraint {
                 }
             }
             Constraint::LessThan(num) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i32>();
                 if let Ok(val) = parse_res {
                     if val < num {
                         Status::Met
@@ -302,7 +302,7 @@ impl Constraint {
                 }
             }
             Constraint::LessThanInclusive(num) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i32>();
                 if let Ok(val) = parse_res {
                     if val <= num {
                         Status::Met
@@ -314,7 +314,7 @@ impl Constraint {
                 }
             }
             Constraint::GreaterThan(num) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i32>();
                 if let Ok(val) = parse_res {
                     if val > num {
                         Status::Met
@@ -326,7 +326,7 @@ impl Constraint {
                 }
             }
             Constraint::GreaterThanInclusive(num) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i32>();
                 if let Ok(val) = parse_res {
                     if val >= num {
                         Status::Met
@@ -338,9 +338,13 @@ impl Constraint {
                 }
             }
             Constraint::BoolEquals(b) => {
-                let bool_val = &val.to_lowercase() == "true";
-                if bool_val == b {
-                    Status::Met
+                let parse_res = v.parse::<bool>();
+                if let Ok(val) = parse_res {
+                    if val == b {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
                 } else {
                     Status::NotMet
                 }

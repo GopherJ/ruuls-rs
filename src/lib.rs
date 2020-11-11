@@ -310,11 +310,11 @@ mod tests {
 
         rule = bool_equals("bar", false);
         res = rule.check_map(&map);
-        assert!(res.status == Status::Met);
+        assert!(res.status == Status::NotMet);
 
         map.insert("quux".into(), "tRuE".into());
         rule = bool_equals("quux", true);
         res = rule.check_map(&map);
-        assert!(res.status == Status::Met);
+        assert!(res.status == Status::NotMet);
     }
 }
