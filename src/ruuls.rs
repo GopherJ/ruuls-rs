@@ -6,6 +6,9 @@ use std::{
     ops::{BitAnd, BitOr, Not},
 };
 
+#[cfg(feature = "serde_json")]
+use serde_json::Value;
+
 // ***********************************************************************
 // STATUS
 // **********************************************************************
@@ -67,14 +70,15 @@ impl Not for Status {
 /// [1]: index.html#functions
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(untagged))]
 pub enum Rule {
     And {
-        rules: Vec<Rule>,
+        and: Vec<Rule>,
     },
     Or {
-        rules: Vec<Rule>,
+        or: Vec<Rule>,
     },
-    NumberOf {
+    AtLeast {
         n: usize,
         rules: Vec<Rule>,
     },
@@ -88,13 +92,13 @@ pub enum Rule {
 impl Rule {
     /// Starting at this node, recursively check (depth-first) any child nodes and
     /// aggregate the results
-    pub fn check(&self, info: &HashMap<String, String>) -> RuleResult {
+    pub fn check_map(&self, info: &HashMap<String, String>) -> RuleResult {
         match *self {
-            Rule::And { ref rules } => {
+            Rule::And { ref and } => {
                 let mut status = Status::Met;
-                let children = rules
+                let children = and
                     .iter()
-                    .map(|c| c.check(info))
+                    .map(|c| c.check_map(info))
                     .inspect(|r| status = status & r.status)
                     .collect::<Vec<_>>();
                 RuleResult {
@@ -103,11 +107,11 @@ impl Rule {
                     children,
                 }
             }
-            Rule::Or { ref rules } => {
+            Rule::Or { ref or } => {
                 let mut status = Status::NotMet;
-                let children = rules
+                let children = or
                     .iter()
-                    .map(|c| c.check(info))
+                    .map(|c| c.check_map(info))
                     .inspect(|r| status = status | r.status)
                     .collect::<Vec<_>>();
                 RuleResult {
@@ -116,29 +120,24 @@ impl Rule {
                     children,
                 }
             }
-            Rule::NumberOf {
+            Rule::AtLeast {
                 n: count,
                 ref rules,
             } => {
                 let mut met_count = 0;
-                let mut failed_count = 0;
                 let children = rules
                     .iter()
-                    .map(|c| c.check(info))
+                    .map(|c| c.check_map(info))
                     .inspect(|r| {
                         if r.status == Status::Met {
                             met_count += 1;
-                        } else if r.status == Status::NotMet {
-                            failed_count += 1;
                         }
                     })
                     .collect::<Vec<_>>();
                 let status = if met_count >= count {
                     Status::Met
-                } else if failed_count >= children.len() - count + 1 {
-                    Status::NotMet
                 } else {
-                    Status::Unknown
+                    Status::NotMet
                 };
                 RuleResult {
                     name: format!("At least {} of", count),
@@ -151,7 +150,79 @@ impl Rule {
                 ref constraint,
             } => {
                 let status = if let Some(s) = info.get(field) {
-                    constraint.check(s)
+                    constraint.check_str(s)
+                } else {
+                    Status::Unknown
+                };
+                RuleResult {
+                    name: field.to_owned(),
+                    status,
+                    children: Vec::new(),
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "serde_json")]
+    pub fn check_json(&self, info: &Value) -> RuleResult {
+        match *self {
+            Rule::And { ref and } => {
+                let mut status = Status::Met;
+                let children = and
+                    .iter()
+                    .map(|c| c.check_json(info))
+                    .inspect(|r| status = status & r.status)
+                    .collect::<Vec<_>>();
+                RuleResult {
+                    name: "And".into(),
+                    status,
+                    children,
+                }
+            }
+            Rule::Or { ref or } => {
+                let mut status = Status::NotMet;
+                let children = or
+                    .iter()
+                    .map(|c| c.check_json(info))
+                    .inspect(|r| status = status | r.status)
+                    .collect::<Vec<_>>();
+                RuleResult {
+                    name: "Or".into(),
+                    status,
+                    children,
+                }
+            }
+            Rule::AtLeast {
+                n: count,
+                ref rules,
+            } => {
+                let mut met_count = 0;
+                let children = rules
+                    .iter()
+                    .map(|c| c.check_json(info))
+                    .inspect(|r| {
+                        if r.status == Status::Met {
+                            met_count += 1;
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let status = if met_count >= count {
+                    Status::Met
+                } else {
+                    Status::NotMet
+                };
+                RuleResult {
+                    name: format!("At least {} of", count),
+                    status,
+                    children,
+                }
+            }
+            Rule::Rule {
+                ref field,
+                ref constraint,
+            } => {
+                let status = if let Some(s) = info.pointer(field) {
+                    constraint.check_json(s)
                 } else {
                     Status::Unknown
                 };
@@ -170,55 +241,230 @@ impl Rule {
 // **********************************************************************
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(rename_all(serialize = "snake_case")))]
+#[cfg_attr(feature = "serde", serde(rename_all(serialize = "camelCase")))]
 #[cfg_attr(feature = "serde", serde(tag = "operator", content = "value"))]
 pub enum Constraint {
     StringEquals(String),
     StringNotEquals(String),
     StringIn(Vec<String>),
     StringNotIn(Vec<String>),
-    IntEquals(i32),
-    IntNotEquals(i32),
-    IntIn(Vec<i32>),
-    IntNotIn(Vec<i32>),
-    IntInRange(i32, i32),
-    IntNotInRange(i32, i32),
+    IntEquals(i64),
+    IntNotEquals(i64),
+    IntIn(Vec<i64>),
+    IntNotIn(Vec<i64>),
+    IntInRange(i64, i64),
+    IntNotInRange(i64, i64),
+    LessThan(i64),
+    LessThanInclusive(i64),
+    GreaterThan(i64),
+    GreaterThanInclusive(i64),
     BoolEquals(bool),
 }
 
 impl Constraint {
-    pub fn check(&self, val: &str) -> Status {
+    #[cfg(feature = "serde_json")]
+    pub fn check_json(&self, v: &Value) -> Status {
         match *self {
             Constraint::StringEquals(ref s) => {
-                if val == s {
+                if let Some(v) = v.as_str() {
+                    if v == s {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::StringNotEquals(ref s) => {
+                if let Some(v) = v.as_str() {
+                    if v != s {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::StringIn(ref ss) => {
+                if let Some(v) = v.as_str() {
+                    if ss.iter().any(|s| s == v) {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::StringNotIn(ref ss) => {
+                if let Some(v) = v.as_str() {
+                    if ss.iter().all(|s| s != v) {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::IntEquals(num) => {
+                if let Some(val) = v.as_i64() {
+                    if val == num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::IntIn(ref nums) => {
+                if let Some(val) = v.as_i64() {
+                    if nums.iter().any(|&num| num == val) {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::IntNotIn(ref nums) => {
+                if let Some(val) = v.as_i64() {
+                    if nums.iter().all(|&num| num != val) {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::IntNotEquals(num) => {
+                if let Some(val) = v.as_i64() {
+                    if val != num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::IntInRange(start, end) => {
+                if let Some(val) = v.as_i64() {
+                    if start <= val && val <= end {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::IntNotInRange(start, end) => {
+                if let Some(val) = v.as_i64() {
+                    if start <= val && val <= end {
+                        Status::NotMet
+                    } else {
+                        Status::Met
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::LessThan(num) => {
+                if let Some(val) = v.as_i64() {
+                    if val < num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::LessThanInclusive(num) => {
+                if let Some(val) = v.as_i64() {
+                    if val <= num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::GreaterThan(num) => {
+                if let Some(val) = v.as_i64() {
+                    if val > num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::GreaterThanInclusive(num) => {
+                if let Some(val) = v.as_i64() {
+                    if val >= num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::BoolEquals(b) => {
+                if let Some(val) = v.as_bool() {
+                    if val == b {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+        }
+    }
+
+    pub fn check_str(&self, v: &str) -> Status {
+        match *self {
+            Constraint::StringEquals(ref s) => {
+                if v == s {
                     Status::Met
                 } else {
                     Status::NotMet
                 }
             }
             Constraint::StringNotEquals(ref s) => {
-                if val != s {
+                if v != s {
                     Status::Met
                 } else {
                     Status::NotMet
                 }
             }
             Constraint::StringIn(ref ss) => {
-                if ss.iter().any(|s| s == val) {
+                if ss.iter().any(|s| s == v) {
                     Status::Met
                 } else {
                     Status::NotMet
                 }
             }
             Constraint::StringNotIn(ref ss) => {
-                if ss.iter().all(|s| s != val) {
+                if ss.iter().all(|s| s != v) {
                     Status::Met
                 } else {
                     Status::NotMet
                 }
             }
             Constraint::IntEquals(num) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i64>();
                 if let Ok(val) = parse_res {
                     if val == num {
                         Status::Met
@@ -230,7 +476,7 @@ impl Constraint {
                 }
             }
             Constraint::IntIn(ref nums) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i64>();
                 if let Ok(val) = parse_res {
                     if nums.iter().any(|&num| num == val) {
                         Status::Met
@@ -242,7 +488,7 @@ impl Constraint {
                 }
             }
             Constraint::IntNotIn(ref nums) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i64>();
                 if let Ok(val) = parse_res {
                     if nums.iter().all(|&num| num != val) {
                         Status::Met
@@ -254,7 +500,7 @@ impl Constraint {
                 }
             }
             Constraint::IntNotEquals(num) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i64>();
                 if let Ok(val) = parse_res {
                     if val != num {
                         Status::Met
@@ -266,7 +512,7 @@ impl Constraint {
                 }
             }
             Constraint::IntInRange(start, end) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i64>();
                 if let Ok(val) = parse_res {
                     if start <= val && val <= end {
                         Status::Met
@@ -278,7 +524,7 @@ impl Constraint {
                 }
             }
             Constraint::IntNotInRange(start, end) => {
-                let parse_res = val.parse::<i32>();
+                let parse_res = v.parse::<i64>();
                 if let Ok(val) = parse_res {
                     if start <= val && val <= end {
                         Status::NotMet
@@ -289,10 +535,62 @@ impl Constraint {
                     Status::NotMet
                 }
             }
+            Constraint::LessThan(num) => {
+                let parse_res = v.parse::<i64>();
+                if let Ok(val) = parse_res {
+                    if val < num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::LessThanInclusive(num) => {
+                let parse_res = v.parse::<i64>();
+                if let Ok(val) = parse_res {
+                    if val <= num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::GreaterThan(num) => {
+                let parse_res = v.parse::<i64>();
+                if let Ok(val) = parse_res {
+                    if val > num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::GreaterThanInclusive(num) => {
+                let parse_res = v.parse::<i64>();
+                if let Ok(val) = parse_res {
+                    if val >= num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
             Constraint::BoolEquals(b) => {
-                let bool_val = &val.to_lowercase() == "true";
-                if bool_val == b {
-                    Status::Met
+                let parse_res = v.parse::<bool>();
+                if let Ok(val) = parse_res {
+                    if val == b {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
                 } else {
                     Status::NotMet
                 }

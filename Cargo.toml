@@ -6,7 +6,8 @@ name    = "ruuls"
 version = "0.1.0"
 
 [features]
-default = ["serde"]
+default = ["serde", "serde_json"]
 
 [dependencies]
-serde = { version = "1.0.117", features = ["derive"], optional = true }
+serde      = { version = "1.0.117", features = ["derive"], optional = true }
+serde_json = { version = "1.0.59", optional = true }
