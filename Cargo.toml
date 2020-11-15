@@ -1,12 +1,15 @@
 [package]
-authors = [
+authors     = [
     "Benn Sundsrud <benn.sundsrud@gmail.com>",
     "Cheng JIANG <alex_cj96@foxmail.com>",
 ]
-edition = "2018"
-license = "MIT/Apache-2.0"
-name    = "ruuls"
-version = "0.1.0"
+description = "json rules engine"
+edition     = "2018"
+keywords    = ["json", "rule", "engine"]
+license     = "MIT/Apache-2.0"
+name        = "json-rules-engine"
+repository  = "https://github.com/GopherJ/ruuls-rs"
+version     = "0.1.0"
 
 [dependencies]
 futures-util = "0.3.8"

@@ -165,7 +165,9 @@ impl Engine {
                 Event::PostToCallbackUrl {
                     ref callback_url,
                     ref params,
-                } => Some(self.client.post(callback_url).json(params).send()),
+                } if rule_result.condition_result.status == Status::Met => {
+                    Some(self.client.post(callback_url).json(params).send())
+                }
                 _ => None,
             });
 
