@@ -1,20 +1,17 @@
-#[cfg(feature = "serde")]
+use crate::error::Result;
+
+use std::ops::{BitAnd, BitOr, Not};
+
+use futures_util::future::try_join_all;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
-
-use std::{
-    collections::HashMap,
-    ops::{BitAnd, BitOr, Not},
-};
-
-#[cfg(feature = "serde_json")]
-use serde_json::Value;
+use serde_json::{value::to_value, Value};
 
 // ***********************************************************************
 // STATUS
 // **********************************************************************
 /// The status of a rule check
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum Status {
     /// Rule was satisfied
     Met,
@@ -68,165 +65,193 @@ impl Not for Status {
 /// to construct the rules tree use the [convenience functions][1] in the module root.
 ///
 /// [1]: index.html#functions
-#[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(untagged))]
-pub enum Rule {
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Condition {
     And {
-        and: Vec<Rule>,
+        and: Vec<Condition>,
     },
     Or {
-        or: Vec<Rule>,
+        or: Vec<Condition>,
     },
     AtLeast {
-        n: usize,
-        rules: Vec<Rule>,
+        should_minimum_meet: usize,
+        conditions: Vec<Condition>,
     },
-    Rule {
+    Condition {
         field: String,
-        #[cfg_attr(feature = "serde", serde(flatten))]
+        #[serde(flatten)]
         constraint: Constraint,
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventParams {
+    #[serde(rename = "type")]
+    ty: String,
+    title: String,
+    message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "params")]
+#[serde(rename_all = "snake_case")]
+pub enum Event {
+    Message(EventParams),
+    PostToCallbackUrl {
+        callback_url: String,
+        #[serde(flatten)]
+        params: EventParams,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Rule {
+    conditions: Condition,
+    event: Event,
+}
+
 impl Rule {
-    /// Starting at this node, recursively check (depth-first) any child nodes and
-    /// aggregate the results
-    pub fn check_map(&self, info: &HashMap<String, String>) -> RuleResult {
-        match *self {
-            Rule::And { ref and } => {
-                let mut status = Status::Met;
-                let children = and
-                    .iter()
-                    .map(|c| c.check_map(info))
-                    .inspect(|r| status = status & r.status)
-                    .collect::<Vec<_>>();
-                RuleResult {
-                    name: "And".into(),
-                    status,
-                    children,
+    pub fn check_value(&self, info: &Value) -> RuleResult {
+        let condition_result = self.conditions.check_value(info);
+        let mut event = self.event.to_owned();
+
+        match event {
+            Event::Message(ref mut params) | Event::PostToCallbackUrl { ref mut params, .. } => {
+                if let Ok(new_params_message) = mustache::compile_str(&params.message)
+                    .and_then(|template| template.render_to_string(info))
+                {
+                    params.message = new_params_message;
                 }
             }
-            Rule::Or { ref or } => {
-                let mut status = Status::NotMet;
-                let children = or
-                    .iter()
-                    .map(|c| c.check_map(info))
-                    .inspect(|r| status = status | r.status)
-                    .collect::<Vec<_>>();
-                RuleResult {
-                    name: "Or".into(),
-                    status,
-                    children,
-                }
-            }
-            Rule::AtLeast {
-                n: count,
-                ref rules,
-            } => {
-                let mut met_count = 0;
-                let children = rules
-                    .iter()
-                    .map(|c| c.check_map(info))
-                    .inspect(|r| {
-                        if r.status == Status::Met {
-                            met_count += 1;
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                let status = if met_count >= count {
-                    Status::Met
-                } else {
-                    Status::NotMet
-                };
-                RuleResult {
-                    name: format!("At least {} of", count),
-                    status,
-                    children,
-                }
-            }
-            Rule::Rule {
-                ref field,
-                ref constraint,
-            } => {
-                let status = if let Some(s) = info.get(field) {
-                    constraint.check_str(s)
-                } else {
-                    Status::Unknown
-                };
-                RuleResult {
-                    name: field.to_owned(),
-                    status,
-                    children: Vec::new(),
-                }
-            }
+        };
+
+        RuleResult {
+            condition_result,
+            event,
+        }
+    }
+}
+
+pub struct Engine {
+    rules: Vec<Rule>,
+    client: Client,
+}
+
+impl Engine {
+    pub fn new() -> Self {
+        Self {
+            rules: Vec::new(),
+            client: Client::new(),
         }
     }
 
-    #[cfg(feature = "serde_json")]
-    pub fn check_json(&self, info: &Value) -> RuleResult {
+    pub fn add_rule(&mut self, rule: Rule) {
+        self.rules.push(rule)
+    }
+
+    pub async fn run<T: Serialize>(&self, value: &T) -> Result<Vec<RuleResult>> {
+        let value = to_value(value)?;
+        let rule_results: Vec<RuleResult> = self
+            .rules
+            .iter()
+            .map(|rule| rule.check_value(&value))
+            .filter(|rule_result| rule_result.condition_result.status == Status::Met)
+            .collect();
+
+        let requests = rule_results
+            .iter()
+            .filter_map(|rule_result| match rule_result.event {
+                Event::PostToCallbackUrl {
+                    ref callback_url,
+                    ref params,
+                } => Some(self.client.post(callback_url).json(params).send()),
+                _ => None,
+            });
+
+        try_join_all(requests).await?;
+
+        Ok(rule_results)
+    }
+}
+
+impl Condition {
+    /// Starting at this node, recursively check (depth-first) any child nodes and
+    /// aggregate the results
+    pub fn check_value(&self, info: &Value) -> ConditionResult {
         match *self {
-            Rule::And { ref and } => {
+            Condition::And { ref and } => {
                 let mut status = Status::Met;
                 let children = and
                     .iter()
-                    .map(|c| c.check_json(info))
+                    .map(|c| c.check_value(info))
                     .inspect(|r| status = status & r.status)
                     .collect::<Vec<_>>();
-                RuleResult {
+
+                ConditionResult {
                     name: "And".into(),
                     status,
                     children,
                 }
             }
-            Rule::Or { ref or } => {
+            Condition::Or { ref or } => {
                 let mut status = Status::NotMet;
                 let children = or
                     .iter()
-                    .map(|c| c.check_json(info))
+                    .map(|c| c.check_value(info))
                     .inspect(|r| status = status | r.status)
                     .collect::<Vec<_>>();
-                RuleResult {
+
+                ConditionResult {
                     name: "Or".into(),
                     status,
                     children,
                 }
             }
-            Rule::AtLeast {
-                n: count,
-                ref rules,
+            Condition::AtLeast {
+                should_minimum_meet,
+                ref conditions,
             } => {
                 let mut met_count = 0;
-                let children = rules
+                let children = conditions
                     .iter()
-                    .map(|c| c.check_json(info))
+                    .map(|c| c.check_value(info))
                     .inspect(|r| {
                         if r.status == Status::Met {
                             met_count += 1;
                         }
                     })
                     .collect::<Vec<_>>();
-                let status = if met_count >= count {
+
+                let status = if met_count >= should_minimum_meet {
                     Status::Met
                 } else {
                     Status::NotMet
                 };
-                RuleResult {
-                    name: format!("At least {} of", count),
+
+                ConditionResult {
+                    name: format!("At least {} of", should_minimum_meet),
                     status,
                     children,
                 }
             }
-            Rule::Rule {
+            Condition::Condition {
                 ref field,
                 ref constraint,
             } => {
-                let status = if let Some(s) = info.pointer(field) {
-                    constraint.check_json(s)
+                let pointer = if field.starts_with("/") {
+                    field.to_owned()
+                } else {
+                    format!("/{}", field)
+                };
+
+                let status = if let Some(s) = info.pointer(&pointer) {
+                    constraint.check_value(s)
                 } else {
                     Status::Unknown
                 };
-                RuleResult {
+
+                ConditionResult {
                     name: field.to_owned(),
                     status,
                     children: Vec::new(),
@@ -239,10 +264,9 @@ impl Rule {
 // ***********************************************************************
 // CONSTRAINT
 // **********************************************************************
-#[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(rename_all(serialize = "camelCase")))]
-#[cfg_attr(feature = "serde", serde(tag = "operator", content = "value"))]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all(serialize = "snake_case"))]
+#[serde(tag = "operator", content = "value")]
 pub enum Constraint {
     StringEquals(String),
     StringNotEquals(String),
@@ -262,8 +286,7 @@ pub enum Constraint {
 }
 
 impl Constraint {
-    #[cfg(feature = "serde_json")]
-    pub fn check_json(&self, v: &Value) -> Status {
+    pub fn check_value(&self, v: &Value) -> Status {
         match *self {
             Constraint::StringEquals(ref s) => {
                 if let Some(v) = v.as_str() {
@@ -432,184 +455,24 @@ impl Constraint {
             }
         }
     }
-
-    pub fn check_str(&self, v: &str) -> Status {
-        match *self {
-            Constraint::StringEquals(ref s) => {
-                if v == s {
-                    Status::Met
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::StringNotEquals(ref s) => {
-                if v != s {
-                    Status::Met
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::StringIn(ref ss) => {
-                if ss.iter().any(|s| s == v) {
-                    Status::Met
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::StringNotIn(ref ss) => {
-                if ss.iter().all(|s| s != v) {
-                    Status::Met
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::IntEquals(num) => {
-                let parse_res = v.parse::<i64>();
-                if let Ok(val) = parse_res {
-                    if val == num {
-                        Status::Met
-                    } else {
-                        Status::NotMet
-                    }
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::IntIn(ref nums) => {
-                let parse_res = v.parse::<i64>();
-                if let Ok(val) = parse_res {
-                    if nums.iter().any(|&num| num == val) {
-                        Status::Met
-                    } else {
-                        Status::NotMet
-                    }
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::IntNotIn(ref nums) => {
-                let parse_res = v.parse::<i64>();
-                if let Ok(val) = parse_res {
-                    if nums.iter().all(|&num| num != val) {
-                        Status::Met
-                    } else {
-                        Status::NotMet
-                    }
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::IntNotEquals(num) => {
-                let parse_res = v.parse::<i64>();
-                if let Ok(val) = parse_res {
-                    if val != num {
-                        Status::Met
-                    } else {
-                        Status::NotMet
-                    }
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::IntInRange(start, end) => {
-                let parse_res = v.parse::<i64>();
-                if let Ok(val) = parse_res {
-                    if start <= val && val <= end {
-                        Status::Met
-                    } else {
-                        Status::NotMet
-                    }
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::IntNotInRange(start, end) => {
-                let parse_res = v.parse::<i64>();
-                if let Ok(val) = parse_res {
-                    if start <= val && val <= end {
-                        Status::NotMet
-                    } else {
-                        Status::Met
-                    }
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::LessThan(num) => {
-                let parse_res = v.parse::<i64>();
-                if let Ok(val) = parse_res {
-                    if val < num {
-                        Status::Met
-                    } else {
-                        Status::NotMet
-                    }
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::LessThanInclusive(num) => {
-                let parse_res = v.parse::<i64>();
-                if let Ok(val) = parse_res {
-                    if val <= num {
-                        Status::Met
-                    } else {
-                        Status::NotMet
-                    }
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::GreaterThan(num) => {
-                let parse_res = v.parse::<i64>();
-                if let Ok(val) = parse_res {
-                    if val > num {
-                        Status::Met
-                    } else {
-                        Status::NotMet
-                    }
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::GreaterThanInclusive(num) => {
-                let parse_res = v.parse::<i64>();
-                if let Ok(val) = parse_res {
-                    if val >= num {
-                        Status::Met
-                    } else {
-                        Status::NotMet
-                    }
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::BoolEquals(b) => {
-                let parse_res = v.parse::<bool>();
-                if let Ok(val) = parse_res {
-                    if val == b {
-                        Status::Met
-                    } else {
-                        Status::NotMet
-                    }
-                } else {
-                    Status::NotMet
-                }
-            }
-        }
-    }
 }
 
 // ***********************************************************************
 // Rule RESULT
 // **********************************************************************
 /// Result of checking a rules tree.
-#[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct RuleResult {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ConditionResult {
     /// Human-friendly description of the rule
     pub name: String,
     /// top-level status of this result
     pub status: Status,
     /// Results of any sub-rules
-    pub children: Vec<RuleResult>,
+    pub children: Vec<ConditionResult>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RuleResult {
+    pub condition_result: ConditionResult,
+    pub event: Event,
 }
