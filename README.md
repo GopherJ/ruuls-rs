@@ -2,11 +2,11 @@
 
 ## Installation
 
-Add this package to `Cargo.toml` of your project. (Check https://crates.io/crates/actix-elastic for right version)
+Add this package to `Cargo.toml` of your project. (Check https://crates.io/crates/json-rules-engine for right version)
 
 ```toml
 [dependencies]
-json-rules-engine = { version = "0.1.0" }
+json-rules-engine = { version = "0.2.0" }
 tokio = { version = "0.3.3", features = ["macros"] }
 serde_json = { version = "*" }
 ```

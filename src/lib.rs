@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Simple rules engine that represents requirements as a tree, with each node having one or more requirements in order to be "Met".
 //!
 //! A tree of rules is constructed, and then the [`.check()`][1] method is called.
@@ -10,14 +11,14 @@
 //! ## Example
 //!
 //! ```rust
-//! extern crate ruuls;
+//! extern crate json_rules_engine;
 //! use serde_json::json;
 //!
-//! let tree = ruuls::and(vec![
-//!     ruuls::string_equals("name", "John Doe"),
-//!     ruuls::or(vec![
-//!         ruuls::int_equals("fav_number", 5),
-//!         ruuls::int_in_range("thinking_of", 5, 10)
+//! let tree = json_rules_engine::and(vec![
+//!     json_rules_engine::string_equals("name", "John Doe"),
+//!     json_rules_engine::or(vec![
+//!         json_rules_engine::int_equals("fav_number", 5),
+//!         json_rules_engine::int_in_range("thinking_of", 5, 10)
 //!     ])
 //! ]);
 //! let mut facts = json!({
@@ -26,7 +27,7 @@
 //! });
 //! let result = tree.check_value(&facts);
 //! println!("{:?}", result);
-//! assert!(result.status == ruuls::Status::Met);
+//! assert!(result.status == json_rules_engine::Status::Met);
 //! // result = RuleResult { name: "And", status: Met, children: [RuleResult { name: "Name is John Doe", status: Met, children: [] }, RuleResult { name: "Or", status: Met, children: [RuleResult { name: "Favorite number is 5", status: Met, children: [] }, RuleResult { name: "Thinking of a number between 5 and 10", status: Unknown, children: [] }] }] }
 //! ```
 //!
@@ -97,9 +98,42 @@ pub fn string_equals(field: &str, val: &str) -> Condition {
     }
 }
 
+pub fn string_not_equals(field: &str, val: &str) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::StringNotEquals(val.into()),
+    }
+}
+
+pub fn string_contains(field: &str, val: &str) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::StringContains(val.into()),
+    }
+}
+
+pub fn string_does_not_contains(field: &str, val: &str) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::StringDoesNotContain(val.into()),
+    }
+}
+
+pub fn string_in(field: &str, val: Vec<&str>) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::StringIn(val.into_iter().map(ToOwned::to_owned).collect()),
+    }
+}
+
+pub fn string_not_in(field: &str, val: Vec<&str>) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::StringNotIn(val.into_iter().map(ToOwned::to_owned).collect()),
+    }
+}
+
 /// Creates a rule for int comparison.
-///
-///If the checked value is not convertible to an integer, the result is `NotMet`
 pub fn int_equals(field: &str, val: i64) -> Condition {
     Condition::Condition {
         field: field.into(),
@@ -107,9 +141,41 @@ pub fn int_equals(field: &str, val: i64) -> Condition {
     }
 }
 
-/// Creates a rule for int range comparison with the interval `[start, end]`.
-///
-/// If the checked value is not convertible to an integer, the result is `NotMet`
+pub fn int_not_equals(field: &str, val: i64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::IntNotEquals(val),
+    }
+}
+
+pub fn int_contains(field: &str, val: i64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::IntContains(val),
+    }
+}
+
+pub fn int_does_not_contain(field: &str, val: i64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::IntDoesNotContain(val),
+    }
+}
+
+pub fn int_in(field: &str, val: Vec<i64>) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::IntIn(val),
+    }
+}
+
+pub fn int_not_in(field: &str, val: Vec<i64>) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::IntNotIn(val),
+    }
+}
+
 pub fn int_in_range(field: &str, start: i64, end: i64) -> Condition {
     Condition::Condition {
         field: field.into(),
@@ -117,9 +183,127 @@ pub fn int_in_range(field: &str, start: i64, end: i64) -> Condition {
     }
 }
 
+pub fn int_not_in_range(field: &str, start: i64, end: i64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::IntNotInRange(start, end),
+    }
+}
+
+pub fn int_less_than(field: &str, val: i64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::IntLessThan(val),
+    }
+}
+
+pub fn int_less_than_inclusive(field: &str, val: i64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::IntLessThanInclusive(val),
+    }
+}
+
+pub fn int_greater_than(field: &str, val: i64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::IntGreaterThan(val),
+    }
+}
+
+pub fn int_greater_than_inclusive(field: &str, val: i64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::IntGreaterThanInclusive(val),
+    }
+}
+
+/// Creates a rule for float comparison.
+pub fn float_equals(field: &str, val: f64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::FloatEquals(val),
+    }
+}
+
+pub fn float_not_equals(field: &str, val: f64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::FloatNotEquals(val),
+    }
+}
+
+pub fn float_contains(field: &str, val: f64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::FloatContains(val),
+    }
+}
+
+pub fn float_does_not_contain(field: &str, val: f64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::FloatDoesNotContain(val),
+    }
+}
+
+pub fn float_in(field: &str, val: Vec<f64>) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::FloatIn(val),
+    }
+}
+
+pub fn float_not_in(field: &str, val: Vec<f64>) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::FloatNotIn(val),
+    }
+}
+
+pub fn float_in_range(field: &str, start: f64, end: f64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::FloatInRange(start, end),
+    }
+}
+
+pub fn float_not_in_range(field: &str, start: f64, end: f64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::FloatNotInRange(start, end),
+    }
+}
+
+pub fn float_less_than(field: &str, val: f64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::FloatLessThan(val),
+    }
+}
+
+pub fn float_less_than_inclusive(field: &str, val: f64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::FloatLessThanInclusive(val),
+    }
+}
+
+pub fn float_greater_than(field: &str, val: f64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::FloatGreaterThan(val),
+    }
+}
+
+pub fn float_greater_than_inclusive(field: &str, val: f64) -> Condition {
+    Condition::Condition {
+        field: field.into(),
+        constraint: Constraint::FloatGreaterThanInclusive(val),
+    }
+}
+
 /// Creates a rule for boolean comparison.
-///
-/// Only input values of `"true"` (case-insensitive) are considered `true`, all others are considered `false`
 pub fn bool_equals(field: &str, val: bool) -> Condition {
     Condition::Condition {
         field: field.into(),

@@ -5,7 +5,7 @@ use std::ops::{BitAnd, BitOr, Not};
 use futures_util::future::try_join_all;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{value::to_value, Value};
+use serde_json::{json, value::to_value, Value};
 
 // ***********************************************************************
 // STATUS
@@ -118,10 +118,10 @@ impl Rule {
 
         match event {
             Event::Message(ref mut params) | Event::PostToCallbackUrl { ref mut params, .. } => {
-                if let Ok(new_params_message) = mustache::compile_str(&params.message)
+                if let Ok(message) = mustache::compile_str(&params.message)
                     .and_then(|template| template.render_to_string(info))
                 {
-                    params.message = new_params_message;
+                    params.message = message;
                 }
             }
         };
@@ -133,6 +133,7 @@ impl Rule {
     }
 }
 
+#[derive(Debug)]
 pub struct Engine {
     rules: Vec<Rule>,
     client: Client,
@@ -150,12 +151,12 @@ impl Engine {
         self.rules.push(rule)
     }
 
-    pub async fn run<T: Serialize>(&self, value: &T) -> Result<Vec<RuleResult>> {
-        let value = to_value(value)?;
+    pub async fn run<T: Serialize>(&self, facts: &T) -> Result<Vec<RuleResult>> {
+        let facts = to_value(facts)?;
         let rule_results: Vec<RuleResult> = self
             .rules
             .iter()
-            .map(|rule| rule.check_value(&value))
+            .map(|rule| rule.check_value(&facts))
             .filter(|rule_result| rule_result.condition_result.status == Status::Met)
             .collect();
 
@@ -165,9 +166,15 @@ impl Engine {
                 Event::PostToCallbackUrl {
                     ref callback_url,
                     ref params,
-                } if rule_result.condition_result.status == Status::Met => {
-                    Some(self.client.post(callback_url).json(params).send())
-                }
+                } => Some(
+                    self.client
+                        .post(callback_url)
+                        .json(&json!({
+                            "event_params": params,
+                            "facts": &facts,
+                        }))
+                        .send(),
+                ),
                 _ => None,
             });
 
@@ -232,7 +239,11 @@ impl Condition {
                 };
 
                 ConditionResult {
-                    name: format!("At least {} of", should_minimum_meet),
+                    name: format!(
+                        "At least meet {} of {}",
+                        should_minimum_meet,
+                        conditions.len()
+                    ),
                     status,
                     children,
                 }
@@ -272,18 +283,34 @@ impl Condition {
 pub enum Constraint {
     StringEquals(String),
     StringNotEquals(String),
+    StringContains(String),
+    StringDoesNotContain(String),
     StringIn(Vec<String>),
     StringNotIn(Vec<String>),
     IntEquals(i64),
     IntNotEquals(i64),
+    IntContains(i64),
+    IntDoesNotContain(i64),
     IntIn(Vec<i64>),
     IntNotIn(Vec<i64>),
     IntInRange(i64, i64),
     IntNotInRange(i64, i64),
-    LessThan(i64),
-    LessThanInclusive(i64),
-    GreaterThan(i64),
-    GreaterThanInclusive(i64),
+    IntLessThan(i64),
+    IntLessThanInclusive(i64),
+    IntGreaterThan(i64),
+    IntGreaterThanInclusive(i64),
+    FloatEquals(f64),
+    FloatNotEquals(f64),
+    FloatContains(f64),
+    FloatDoesNotContain(f64),
+    FloatIn(Vec<f64>),
+    FloatNotIn(Vec<f64>),
+    FloatInRange(f64, f64),
+    FloatNotInRange(f64, f64),
+    FloatLessThan(f64),
+    FloatLessThanInclusive(f64),
+    FloatGreaterThan(f64),
+    FloatGreaterThanInclusive(f64),
     BoolEquals(bool),
 }
 
@@ -304,6 +331,36 @@ impl Constraint {
             Constraint::StringNotEquals(ref s) => {
                 if let Some(v) = v.as_str() {
                     if v != s {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::StringContains(ref s) => {
+                if let Some(v) = v.as_array().map(|x| {
+                    x.into_iter()
+                        .filter_map(|y| y.as_str())
+                        .collect::<Vec<&str>>()
+                }) {
+                    if v.contains(&s.as_str()) {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::StringDoesNotContain(ref s) => {
+                if let Some(v) = v.as_array().map(|x| {
+                    x.into_iter()
+                        .filter_map(|y| y.as_str())
+                        .collect::<Vec<&str>>()
+                }) {
+                    if !v.contains(&s.as_str()) {
                         Status::Met
                     } else {
                         Status::NotMet
@@ -345,6 +402,47 @@ impl Constraint {
                     Status::NotMet
                 }
             }
+            Constraint::IntNotEquals(num) => {
+                if let Some(val) = v.as_i64() {
+                    if val != num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::IntContains(num) => {
+                if let Some(val) = v.as_array().map(|x| {
+                    x.into_iter()
+                        .filter_map(|y| y.as_i64())
+                        .collect::<Vec<i64>>()
+                }) {
+                    if val.contains(&num) {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::IntDoesNotContain(num) => {
+                if let Some(val) = v.as_array().map(|x| {
+                    x.into_iter()
+                        .filter_map(|y| y.as_i64())
+                        .collect::<Vec<i64>>()
+                }) {
+                    if !val.contains(&num) {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
             Constraint::IntIn(ref nums) => {
                 if let Some(val) = v.as_i64() {
                     if nums.iter().any(|&num| num == val) {
@@ -359,17 +457,6 @@ impl Constraint {
             Constraint::IntNotIn(ref nums) => {
                 if let Some(val) = v.as_i64() {
                     if nums.iter().all(|&num| num != val) {
-                        Status::Met
-                    } else {
-                        Status::NotMet
-                    }
-                } else {
-                    Status::NotMet
-                }
-            }
-            Constraint::IntNotEquals(num) => {
-                if let Some(val) = v.as_i64() {
-                    if val != num {
                         Status::Met
                     } else {
                         Status::NotMet
@@ -400,7 +487,7 @@ impl Constraint {
                     Status::NotMet
                 }
             }
-            Constraint::LessThan(num) => {
+            Constraint::IntLessThan(num) => {
                 if let Some(val) = v.as_i64() {
                     if val < num {
                         Status::Met
@@ -411,7 +498,7 @@ impl Constraint {
                     Status::NotMet
                 }
             }
-            Constraint::LessThanInclusive(num) => {
+            Constraint::IntLessThanInclusive(num) => {
                 if let Some(val) = v.as_i64() {
                     if val <= num {
                         Status::Met
@@ -422,7 +509,7 @@ impl Constraint {
                     Status::NotMet
                 }
             }
-            Constraint::GreaterThan(num) => {
+            Constraint::IntGreaterThan(num) => {
                 if let Some(val) = v.as_i64() {
                     if val > num {
                         Status::Met
@@ -433,8 +520,148 @@ impl Constraint {
                     Status::NotMet
                 }
             }
-            Constraint::GreaterThanInclusive(num) => {
+            Constraint::IntGreaterThanInclusive(num) => {
                 if let Some(val) = v.as_i64() {
+                    if val >= num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::FloatEquals(num) => {
+                if let Some(val) = v.as_f64() {
+                    if val == num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::FloatNotEquals(num) => {
+                if let Some(val) = v.as_f64() {
+                    if val != num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::FloatContains(num) => {
+                if let Some(val) = v.as_array().map(|x| {
+                    x.into_iter()
+                        .filter_map(|y| y.as_f64())
+                        .collect::<Vec<f64>>()
+                }) {
+                    if val.contains(&num) {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::FloatDoesNotContain(num) => {
+                if let Some(val) = v.as_array().map(|x| {
+                    x.into_iter()
+                        .filter_map(|y| y.as_f64())
+                        .collect::<Vec<f64>>()
+                }) {
+                    if !val.contains(&num) {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::FloatIn(ref nums) => {
+                if let Some(val) = v.as_f64() {
+                    if nums.iter().any(|&num| num == val) {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::FloatNotIn(ref nums) => {
+                if let Some(val) = v.as_f64() {
+                    if nums.iter().all(|&num| num != val) {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::FloatInRange(start, end) => {
+                if let Some(val) = v.as_f64() {
+                    if start <= val && val <= end {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::FloatNotInRange(start, end) => {
+                if let Some(val) = v.as_f64() {
+                    if start <= val && val <= end {
+                        Status::NotMet
+                    } else {
+                        Status::Met
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::FloatLessThan(num) => {
+                if let Some(val) = v.as_f64() {
+                    if val < num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::FloatLessThanInclusive(num) => {
+                if let Some(val) = v.as_f64() {
+                    if val <= num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::FloatGreaterThan(num) => {
+                if let Some(val) = v.as_f64() {
+                    if val > num {
+                        Status::Met
+                    } else {
+                        Status::NotMet
+                    }
+                } else {
+                    Status::NotMet
+                }
+            }
+            Constraint::FloatGreaterThanInclusive(num) => {
+                if let Some(val) = v.as_f64() {
                     if val >= num {
                         Status::Met
                     } else {
