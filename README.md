@@ -23,7 +23,7 @@ serde_json = { version = "*" }
 
 ## Get started
 
-```
+```rust
 use ruuls::{Engine, Rule};
 use serde_json::json;
 
