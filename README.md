@@ -60,7 +60,7 @@ async main() -> anyhow::Result<()> {
         }
     });
 
-    let rule = serde_json::from_str(serde_json::from_str(&rules_json).unwrap()).unwrap();
+    let rule: Rule = serde_json::from_str(serde_json::to_string(&rules_json).unwrap()).unwrap();
 
     let mut engine = Engine::new();
     engine.add_rule(rule);
